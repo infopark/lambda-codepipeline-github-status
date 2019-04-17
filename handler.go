@@ -88,7 +88,7 @@ func HandleLambdaEvent(ev event) error {
 		"eu-west-1", ev.Pipeline, ev.ExecutionID)
 	ghURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/statuses/%s", owner, repo, rev)
 
-	log.Printf("Setting status for repo %s/%s => %s\n", owner, repo, ghStatus)
+	log.Printf("Setting status for repo=%s/%s, commit=%s to %s\n", owner, repo, rev, ghStatus)
 
 	var b bytes.Buffer
 	err = json.NewEncoder(&b).Encode(ghReqPayload{
