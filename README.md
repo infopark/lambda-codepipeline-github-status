@@ -4,8 +4,6 @@ This Lambda function updates the GitHub status of a pull request via CodePipelin
 
 ## Configuration
 
-Add your GitHub token to the Lambda's env `GITHUB_TOKEN`.
-
 Configure a CloudWatch event rule:
 
 ```json
@@ -19,12 +17,27 @@ Configure a CloudWatch event rule:
   "detail": {
     "pipeline": [
       "my-pipeline"
+    ],
+    "stage": [
+      "Build"
     ]
   }
 }
 ```
 
-and connect it to the Lambda function. Set input to "Matched event".
+and connect it to the Lambda function. Set input to "Input Transformer":
+
+```
+{"pipeline":"$.detail.pipeline","execution-id":"$.detail.execution-id"}
+```
+
+```
+{
+  "execution-id": <execution-id>,
+  "github-token": "foobar",
+  "pipeline": <pipeline>
+}
+```
 
 Modify Lambda's policy to allow `codepipeline:GetPipelineExecution`.
 

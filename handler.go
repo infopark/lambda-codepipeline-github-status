@@ -6,20 +6,20 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 
-	"github.com/aws/aws-lambda-go/events"
 	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/codepipeline"
 )
 
-type eventDetails struct {
+type event struct {
 	ExecutionID string `json:"execution-id"`
+	GithubToken string `json:"github-token"`
 	Pipeline    string `json:"pipeline"`
 }
 
@@ -31,23 +31,22 @@ type ghReqPayload struct {
 }
 
 // HandleLambdaEvent is triggered by a CloudWatch event rule.
-func HandleLambdaEvent(event events.CloudWatchEvent) error {
-	token := os.Getenv("GITHUB_TOKEN")
-	if token == "" {
-		return errors.New("missing env GITHUB_TOKEN")
+func HandleLambdaEvent(ev event) error {
+	if ev.ExecutionID == "" {
+		return errors.New("missing event param execution-id")
 	}
-
-	var details eventDetails
-	err := json.Unmarshal(event.Detail, &details)
-	if err != nil {
-		return err
+	if ev.GithubToken == "" {
+		return errors.New("missing event param github-token")
+	}
+	if ev.Pipeline == "" {
+		return errors.New("missing event param pipeline")
 	}
 
 	sess := session.Must(session.NewSession())
 	cpSvc := codepipeline.New(sess)
 	res, err := cpSvc.GetPipelineExecution(&codepipeline.GetPipelineExecutionInput{
-		PipelineExecutionId: aws.String(details.ExecutionID),
-		PipelineName:        aws.String(details.Pipeline),
+		PipelineExecutionId: aws.String(ev.ExecutionID),
+		PipelineName:        aws.String(ev.Pipeline),
 	})
 	if err != nil {
 		return err
@@ -86,8 +85,10 @@ func HandleLambdaEvent(event events.CloudWatchEvent) error {
 
 	deepLink := fmt.Sprintf(
 		"https://%s.console.aws.amazon.com/codesuite/codepipeline/pipelines/%s/executions/%s",
-		"eu-west-1", details.Pipeline, details.ExecutionID)
+		"eu-west-1", ev.Pipeline, ev.ExecutionID)
 	ghURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/statuses/%s", owner, repo, rev)
+
+	log.Printf("Setting status for repo %s/%s => %s\n", owner, repo, ghStatus)
 
 	var b bytes.Buffer
 	err = json.NewEncoder(&b).Encode(ghReqPayload{
@@ -104,7 +105,7 @@ func HandleLambdaEvent(event events.CloudWatchEvent) error {
 		return err
 	}
 	ghReq.Header.Set("Accept", "application/json")
-	ghReq.Header.Set("Authorization", "token "+token)
+	ghReq.Header.Set("Authorization", "token "+ev.GithubToken)
 	ghReq.Header.Set("Content-Type", "application/json; charset=utf-8")
 	client := &http.Client{}
 	ghRes, err := client.Do(ghReq)
