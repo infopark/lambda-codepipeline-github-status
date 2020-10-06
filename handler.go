@@ -82,7 +82,7 @@ func HandleLambdaEvent(ev event) error {
 
 	repo, err := extractRepoName(url)
 	if err != nil {
-		return fmt.Errorf("failed to extract repo name from artifact description: %w", err)
+		return fmt.Errorf("failed to extract repo name from artifact url %v: %w", url, err)
 	}
 
 	deepLink := fmt.Sprintf(
@@ -128,12 +128,19 @@ func extractRepoName(url *url.URL) (string, error) {
 	switch url.Hostname() {
 	case "github.com":
 		p := strings.Split(url.Path, "/")
+		if len(p) < 3 {
+			return "", fmt.Errorf("too few path components")
+		}
 		return fmt.Sprintf("%s/%s", p[1], p[2]), nil
 	case "eu-west-1.console.aws.amazon.com":
 		if url.Path != "/codesuite/settings/connections/redirect" {
 			return "", fmt.Errorf("unexpected URL path: %v", url.Path)
 		}
-		return url.Query().Get("FullRepositoryId"), nil
+		repo := url.Query().Get("FullRepositoryId")
+		if repo == "" {
+			return "", fmt.Errorf("missing FullRepositoryId URL param")
+		}
+		return repo, nil
 	default:
 		return "", fmt.Errorf("unknown hostname %v", url.Hostname())
 	}
