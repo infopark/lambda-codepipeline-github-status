@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/aws/aws-lambda-go/lambda"
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/session"
 	"github.com/aws/aws-sdk-go/service/codepipeline"
@@ -68,6 +67,8 @@ func HandleLambdaEvent(ev event) error {
 	if err != nil {
 		return err
 	}
+	log.Printf("revision ID: %v URL: %v\n", rev, url)
+
 	status := aws.StringValue(res.PipelineExecution.Status)
 	var ghStatus string
 	switch status {
@@ -79,16 +80,17 @@ func HandleLambdaEvent(ev event) error {
 		ghStatus = "failure"
 	}
 
-	pathComponents := strings.Split(url.Path, "/")
-	owner := pathComponents[1]
-	repo := pathComponents[2]
+	repo, err := extractRepoName(url)
+	if err != nil {
+		return fmt.Errorf("failed to extract repo name from artifact description: %w", err)
+	}
 
 	deepLink := fmt.Sprintf(
 		"https://%s.console.aws.amazon.com/codesuite/codepipeline/pipelines/%s/executions/%s",
 		"eu-west-1", ev.Pipeline, ev.ExecutionID)
-	ghURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/statuses/%s", owner, repo, rev)
+	ghURL := fmt.Sprintf("https://api.github.com/repos/%s/statuses/%s", repo, rev)
 
-	log.Printf("Setting status for repo=%s/%s, commit=%s to %s\n", owner, repo, rev, ghStatus)
+	log.Printf("Setting status for repo=%s, commit=%s to %s\n", repo, rev, ghStatus)
 
 	var b bytes.Buffer
 	err = json.NewEncoder(&b).Encode(ghReqPayload{
@@ -122,6 +124,17 @@ func HandleLambdaEvent(ev event) error {
 	return nil
 }
 
-func main() {
-	lambda.Start(HandleLambdaEvent)
+func extractRepoName(url *url.URL) (string, error) {
+	switch url.Hostname() {
+	case "github.com":
+		p := strings.Split(url.Path, "/")
+		return fmt.Sprintf("%s/%s", p[1], p[2]), nil
+	case "eu-west-1.console.aws.amazon.com":
+		if url.Path != "/codesuite/settings/connections/redirect" {
+			return "", fmt.Errorf("unexpected URL path: %v", url.Path)
+		}
+		return url.Query().Get("FullRepositoryId"), nil
+	default:
+		return "", fmt.Errorf("unknown hostname %v", url.Hostname())
+	}
 }
